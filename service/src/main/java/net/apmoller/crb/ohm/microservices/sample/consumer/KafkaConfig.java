@@ -1,25 +1,26 @@
 package net.apmoller.crb.ohm.microservices.sample.consumer;
+
+import io.micrometer.core.instrument.ImmutableTag;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Metrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import net.apmoller.crb.ohm.microservices.sample.models.User;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.kafka.core.DefaultKafkaProducerFactory;
-import org.springframework.kafka.core.KafkaAdmin;
-import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.kafka.core.ProducerFactory;
+import org.springframework.kafka.core.*;
 import org.springframework.util.StringUtils;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 import lombok.RequiredArgsConstructor;
 import org.springframework.kafka.annotation.KafkaListenerConfigurer;
 import org.springframework.kafka.config.KafkaListenerEndpointRegistrar;
-import org.springframework.kafka.core.ConsumerFactory;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
-import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.kafka.support.converter.StringJsonMessageConverter;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
@@ -33,12 +34,13 @@ import org.springframework.kafka.listener.SeekToCurrentErrorHandler;
 import org.springframework.retry.support.RetryTemplate;
 import org.springframework.util.backoff.ExponentialBackOff;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
- * This class contains all the configuration information for Kafka producer factory to be
- * able to create a Kafka template for publishing messages
+ * This class contains all the configuration information for Kafka producer factory to be able to create a Kafka
+ * template for publishing messages
  */
 @Configuration
 @Getter
@@ -46,7 +48,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class KafkaConfig implements KafkaListenerConfigurer {
 
-  private final LocalValidatorFactoryBean validator;
+    private final LocalValidatorFactoryBean validator;
 
     @Value("${kafka.bootstrap-servers}")
     private String bootstrapServers;
@@ -91,11 +93,13 @@ public class KafkaConfig implements KafkaListenerConfigurer {
     @Value("${kafka.consumer.retry.max-interval-secs:10}")
     private int retryMaxIntervalSeconds;
 
-    private static void addSaslProperties(Map<String, Object> properties, String saslMechanism, String securityProtocol, String loginModule, String username, String password) {
+    private static void addSaslProperties(Map<String, Object> properties, String saslMechanism, String securityProtocol,
+            String loginModule, String username, String password) {
         if (!StringUtils.isEmpty(username)) {
             properties.put("security.protocol", securityProtocol);
             properties.put("sasl.mechanism", saslMechanism);
-            String saslJassConfig = String.format("%s required username=\"%s\" password=\"%s\" ;", loginModule, username, password);
+            String saslJassConfig = String.format("%s required username=\"%s\" password=\"%s\" ;", loginModule,
+                    username, password);
             properties.put("sasl.jaas.config", saslJassConfig);
         }
     }
@@ -108,9 +112,8 @@ public class KafkaConfig implements KafkaListenerConfigurer {
     }
 
     @Bean
-        public ProducerFactory<String, String> producerFactory() {
-            public ProducerFactory<String, User> producerFactory() {
-            Map<String, Object> properties = new HashMap<>();
+    public ProducerFactory<String, String> producerFactory() {
+        Map<String, Object> properties = new HashMap<>();
         properties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         properties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         properties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
@@ -120,11 +123,19 @@ public class KafkaConfig implements KafkaListenerConfigurer {
         properties.put(ProducerConfig.SEND_BUFFER_CONFIG, producerBatchSize);
         properties.put(ProducerConfig.ACKS_CONFIG, producerAcksConfig);
         properties.put(ProducerConfig.CLIENT_ID_CONFIG, kafkaClientId);
+        properties.put(ProducerConfig.METRIC_REPORTER_CLASSES_CONFIG, "org.apache.kafka.common.metrics.JmxReporter");
+        properties.put(ProducerConfig.METRICS_RECORDING_LEVEL_CONFIG, "INFO");
+       // properties.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, "io.confluent.monitoring.clients.interceptor.MonitoringProducerInterceptor");
+
 
         addSaslProperties(properties, saslMechanism, securityProtocol, loginModule, username, password);
         addTruststoreProperties(properties, truststoreLocation, truststorePassword);
 
-        return new DefaultKafkaProducerFactory<>(properties);
+        DefaultKafkaProducerFactory<String, String> pf = new DefaultKafkaProducerFactory<>(properties);
+        pf.addListener(new MicrometerProducerListener<String, String>(Metrics.globalRegistry,
+                Collections.singletonList(new ImmutableTag("customTag", "customTagValue"))));
+
+        return pf;
     }
 
     @Bean
@@ -156,10 +167,16 @@ public class KafkaConfig implements KafkaListenerConfigurer {
         properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
         properties.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, consumerMaxPollRecords);
         properties.put(ConsumerConfig.CLIENT_ID_CONFIG, kafkaClientId);
+        //properties.put(ConsumerConfig.INTERCEPTOR_CLASSES_CONFIG, "io.confluent.monitoring.clients.interceptor.MonitoringConsumerInterceptor");
+
         addSaslProperties(properties, saslMechanism, securityProtocol, loginModule, username, password);
         addTruststoreProperties(properties, truststoreLocation, truststorePassword);
 
-        return new DefaultKafkaConsumerFactory<>(properties);
+        DefaultKafkaConsumerFactory<String, User> cf = new DefaultKafkaConsumerFactory<>(properties);
+        cf.addListener(new MicrometerConsumerListener<String, User>(Metrics.globalRegistry,
+                Collections.singletonList(new ImmutableTag("customTag", "customTagValue"))));
+
+        return cf;
     }
 
     @Bean
@@ -169,7 +186,7 @@ public class KafkaConfig implements KafkaListenerConfigurer {
 
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, User> kafkaListenerContainerFactory(
-        StringJsonMessageConverter messageConverter) {
+            StringJsonMessageConverter messageConverter) {
         ConcurrentKafkaListenerContainerFactory<String, User> factory = new ConcurrentKafkaListenerContainerFactory();
 
         factory.setMessageConverter(messageConverter);
@@ -178,12 +195,11 @@ public class KafkaConfig implements KafkaListenerConfigurer {
         factory.setRetryTemplate(retryTemplate());
         factory.setStatefulRetry(true);
         factory.setErrorHandler(new SeekToCurrentErrorHandler(new DeadLetterPublishingRecoverer(kafkaTemplate()),
-        new ExponentialBackOff()));
+                new ExponentialBackOff()));
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
 
         return factory;
     }
-
 
     @Bean
     public DeadLetterPublishingRecoverer recoverer(KafkaTemplate<Object, Object> template) {
@@ -212,9 +228,9 @@ public class KafkaConfig implements KafkaListenerConfigurer {
         return template;
     }
 
-  @Override
-  public void configureKafkaListeners(KafkaListenerEndpointRegistrar registrar) {
-    registrar.setValidator(this.validator);
-  }
+    @Override
+    public void configureKafkaListeners(KafkaListenerEndpointRegistrar registrar) {
+        registrar.setValidator(this.validator);
+    }
 
 }

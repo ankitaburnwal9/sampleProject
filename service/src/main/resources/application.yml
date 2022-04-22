@@ -5,9 +5,20 @@ kafkabootstrapservers: localhost:9092
 server:
   port: 8080
 
+kafka:
+  bootstrap-servers: ${kafkabootstrapservers}
+  clientId: sample-service
+  command:
+    submission:
+      topic: test1
+    submission-result:
+      topic: sample-Submission-Result
+
 spring:
   #  profiles:     #too pas by pass jwt plz use this profile only for local testing and for integration testing
   #    active: integrationTest
+  jmx:
+    enabled: true
   main:
     banner-mode: CONSOLE
   banner:
@@ -31,23 +42,33 @@ spring:
           secret-key: vtshV6vQk2cWgFyC
 
 
-kafka:
-  bootstrap-servers: ${kafkabootstrapservers}
-  clientId: sample-service
-  command:
-    submission:
-      topic: sample-Command
-    submission-result:
-      topic: sample-Submission-Result
-consumer:
-  offset-auto-reset: earliest
-  group: submission-consumer-group
-  concurrency: 1
-  max-poll-records: 10
-  retry:
-    max-attempts: 3
-    initial-interval-secs: 1
-    max-interval-secs: 10
+
+  kafka:
+    consumer:
+      offset-auto-reset: earliest
+      group: submission-consumer-group
+      concurrency: 1
+      max-poll-records: 10
+      retry:
+        max-attempts: 3
+        initial-interval-secs: 1
+        max-interval-secs: 10
+
+    producer:
+      delete:
+        topic:
+          enable: true
+      properties:
+        acks: all
+        retries: 5
+        enable:
+          idempotence: true
+        max:
+          in:
+            flight:
+              requests:
+                per:
+                  connection: 2
 
 management:
   endpoints:
@@ -57,6 +78,8 @@ management:
   endpoint:
     health:
       show-details: always
+    metrics:
+      enabled: true
       group:
         liveness:
           include: diskSpace,ping

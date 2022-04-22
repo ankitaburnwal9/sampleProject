@@ -39,7 +39,7 @@ public class KafkaConsumerTest {
     public void testProcessEventsForUser() {
         final User user = ResponseStubs.createUser();
         String res = kafkaConsumer.onSubmissionKafkaMessage(user, RECEIVED_MESSAGE_KEY, acknowledgment);
-        assertEquals(res,"Message Successfully Consumed");
+        assertEquals(res, "Message Successfully Consumed");
     }
 
     @Test
@@ -47,6 +47,6 @@ public class KafkaConsumerTest {
     public void testProcessEventsForString() {
         String message = "message";
         String res = kafkaConsumer.onSubmissionResultsMessage(message, RECEIVED_MESSAGE_KEY, acknowledgment);
-        assertEquals(res,"Message Successfully Consumed");
+        assertEquals(res, "Message Successfully Consumed");
     }
 }
